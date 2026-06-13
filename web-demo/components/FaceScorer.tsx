@@ -286,6 +286,13 @@ export default function FaceScorer() {
   const dominantResult  = calcDominantFace(faceData);
   const showVideoArea   = mode !== 'score' || inputType === 'camera';
 
+  const maxDom = useMemo(() => {
+    if (maxLeftScore === null || maxRightScore === null) return null;
+    const diff = Math.abs(maxLeftScore - maxRightScore);
+    const side = diff < 4 ? 'balanced' : maxLeftScore > maxRightScore ? 'left' : 'right';
+    return { side, left: maxLeftScore, right: maxRightScore };
+  }, [maxLeftScore, maxRightScore]);
+
   const totalColor =
     scores.total >= 80 ? 'text-yellow-600' :
     scores.total >= 60 ? 'text-green-600'  :
@@ -635,14 +642,14 @@ export default function FaceScorer() {
                   <div key={label} className="space-y-1">
                     <div className="flex justify-between items-baseline">
                       <span className="text-xs text-gray-500">{label}</span>
-                      <div className="flex gap-3 text-xs">
+                      <div className="flex gap-3 text-xs" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         <span className="text-gray-600">
-                          現在: <span className="font-bold">{score}</span>
+                          現在: <span className="font-bold inline-block min-w-[2.2em] text-right">{score}</span>
                         </span>
                         <span className={`transition-colors duration-300 ${
                           flash ? 'text-amber-500 font-semibold' : 'text-gray-400'
                         }`}>
-                          最高: <span className="font-bold">{maxScore ?? score}</span>
+                          最高: <span className="font-bold inline-block min-w-[2.2em] text-right">{maxScore ?? score}</span>
                           {flash && <span className="ml-0.5 animate-bounce inline-block">↑</span>}
                         </span>
                       </div>
@@ -663,27 +670,6 @@ export default function FaceScorer() {
                 ))}
               </div>
 
-              {/* 最高値ベースの利き顔判定 */}
-              {maxLeftScore !== null && maxRightScore !== null && (() => {
-                const diff = Math.abs(maxLeftScore - maxRightScore);
-                const dom = diff < 4 ? 'balanced' : maxLeftScore > maxRightScore ? 'left' : 'right';
-                const label = dom === 'balanced'
-                  ? 'これまでの最高スコアでは、両面均等です'
-                  : dom === 'left'
-                    ? 'これまでの最高スコアでは、左顔が利き顔の可能性があります'
-                    : 'これまでの最高スコアでは、右顔が利き顔の可能性があります';
-                return (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-                    <p className="text-xs font-semibold text-purple-700 mb-1">{label}</p>
-                    <p className="text-xs text-gray-500">
-                      左: <span className="font-bold">{maxLeftScore}</span>
-                      {' / '}
-                      右: <span className="font-bold">{maxRightScore}</span>
-                    </p>
-                  </div>
-                );
-              })()}
-
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <p className="text-xs font-semibold text-amber-700 mb-1.5">検出内容</p>
                 <ul className="space-y-1">
@@ -700,6 +686,24 @@ export default function FaceScorer() {
               </p>
             </>
           ) : null}
+
+          {/* 最高値ベースの利き顔判定（顔が外れても消えない） */}
+          {maxDom && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-purple-700 mb-1">
+                {maxDom.side === 'balanced'
+                  ? 'これまでの最高スコアでは、両面均等です'
+                  : maxDom.side === 'left'
+                    ? 'これまでの最高スコアでは、左顔が利き顔の可能性があります'
+                    : 'これまでの最高スコアでは、右顔が利き顔の可能性があります'}
+              </p>
+              <p className="text-xs text-gray-500" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                左: <span className="font-bold">{maxDom.left}</span>
+                {' / '}
+                右: <span className="font-bold">{maxDom.right}</span>
+              </p>
+            </div>
+          )}
         </div>
       )}
 

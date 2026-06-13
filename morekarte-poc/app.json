@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "morekarte-poc",
+    "slug": "morekarte-poc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.morekarte.poc",
+      "infoPlist": {
+        "NSCameraUsageDescription": "盛れカルテの検証用：顔のランドマーク検出のためにカメラを使用します。"
+      }
+    },
+    "android": {
+      "package": "com.morekarte.poc",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "盛れカルテの検証用：顔のランドマーク検出のためにカメラを使用します。",
+          "enableMicrophonePermission": false
+        }
+      ]
+    ]
+  }
+}

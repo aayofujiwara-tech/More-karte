@@ -1,0 +1,27 @@
+{
+  "name": "morekarte-poc",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-vision-camera": "^4.6.4",
+    "react-native-vision-camera-face-detector": "^1.7.2",
+    "@shopify/react-native-skia": "^1.5.0",
+    "react-native-worklets-core": "^1.5.0",
+    "react-native-reanimated": "~3.16.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "typescript": "^5.3.0",
+    "@types/react": "~18.3.0"
+  },
+  "private": true
+}

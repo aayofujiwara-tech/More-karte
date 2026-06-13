@@ -7,3 +7,5 @@ android/
 *.log
 .next/
 out/
+
+.vercel

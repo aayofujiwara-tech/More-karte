@@ -5,3 +5,5 @@ android/
 *.zip
 .DS_Store
 *.log
+.next/
+out/

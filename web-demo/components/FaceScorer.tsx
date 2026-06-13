@@ -46,6 +46,9 @@ export default function FaceScorer() {
   const [maxRightScore, setMaxRightScore] = useState<number | null>(null);
   const [leftFlash,     setLeftFlash]     = useState(false);
   const [rightFlash,    setRightFlash]    = useState(false);
+  const displayTickRef = useRef(0);
+  const [dispLeft,  setDispLeft]  = useState(50);
+  const [dispRight, setDispRight] = useState(50);
 
   const videoRef     = useRef<HTMLVideoElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -186,6 +189,8 @@ export default function FaceScorer() {
     if (mode !== 'dominant') return;
     const result = calcDominantFace(faceData);
     if (!result) return;
+
+    // 最高値追跡（毎フレーム）
     let cleanup: (() => void) | undefined;
     if (maxLeftScore === null || result.leftScore > maxLeftScore) {
       setMaxLeftScore(result.leftScore);
@@ -200,6 +205,15 @@ export default function FaceScorer() {
       const prev = cleanup;
       cleanup = () => { clearTimeout(t2); prev?.(); };
     }
+
+    // 現在値の表示は 250ms ごとに間引き（ちらつき防止）
+    const now = Date.now();
+    if (now - displayTickRef.current >= 250) {
+      displayTickRef.current = now;
+      setDispLeft(result.leftScore);
+      setDispRight(result.rightScore);
+    }
+
     return cleanup;
   }, [faceData, mode, maxLeftScore, maxRightScore]);
 
@@ -208,6 +222,9 @@ export default function FaceScorer() {
     setMaxRightScore(null);
     setLeftFlash(false);
     setRightFlash(false);
+    setDispLeft(50);
+    setDispRight(50);
+    displayTickRef.current = 0;
   }, []);
 
   // 基準顔登録
@@ -600,7 +617,7 @@ export default function FaceScorer() {
                 {[
                   {
                     label: '左顔',
-                    score: dominantResult.leftScore,
+                    score: dispLeft,
                     maxScore: maxLeftScore,
                     flash: leftFlash,
                     barColor: 'from-pink-400 to-rose-400',
@@ -608,7 +625,7 @@ export default function FaceScorer() {
                   },
                   {
                     label: '右顔',
-                    score: dominantResult.rightScore,
+                    score: dispRight,
                     maxScore: maxRightScore,
                     flash: rightFlash,
                     barColor: 'from-purple-400 to-blue-400',
@@ -645,6 +662,27 @@ export default function FaceScorer() {
                   </div>
                 ))}
               </div>
+
+              {/* 最高値ベースの利き顔判定 */}
+              {maxLeftScore !== null && maxRightScore !== null && (() => {
+                const diff = Math.abs(maxLeftScore - maxRightScore);
+                const dom = diff < 4 ? 'balanced' : maxLeftScore > maxRightScore ? 'left' : 'right';
+                const label = dom === 'balanced'
+                  ? 'これまでの最高スコアでは、両面均等です'
+                  : dom === 'left'
+                    ? 'これまでの最高スコアでは、左顔が利き顔の可能性があります'
+                    : 'これまでの最高スコアでは、右顔が利き顔の可能性があります';
+                return (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-purple-700 mb-1">{label}</p>
+                    <p className="text-xs text-gray-500">
+                      左: <span className="font-bold">{maxLeftScore}</span>
+                      {' / '}
+                      右: <span className="font-bold">{maxRightScore}</span>
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <p className="text-xs font-semibold text-amber-700 mb-1.5">検出内容</p>

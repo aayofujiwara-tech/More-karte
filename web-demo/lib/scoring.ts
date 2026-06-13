@@ -1,14 +1,18 @@
 export type FaceData = {
   hasFace: boolean;
-  // 正規化座標 [0,1] でのバウンディングボックス
   bounds?: { x: number; y: number; width: number; height: number };
-  rollAngle?: number;         // 度（傾き）
-  smileScore?: number;        // 0-1
-  eyeOpenScore?: number;      // 0-1
-  // 顔の高さで正規化済みの左右対称性指標
+  rollAngle?: number;
+  pitchAngle?: number;        // 度: 正=上向き, 負=下向き
+  yawAngle?: number;          // 度: 正=右向き, 負=左向き
+  smileScore?: number;
+  eyeOpenScore?: number;
   mouthCornerDiffY?: number;
   eyeDiffY?: number;
   landmarkCount?: number;
+  leftEAR?: number;
+  rightEAR?: number;
+  leftSmile?: number;
+  rightSmile?: number;
 };
 
 export type ScoreResult = {

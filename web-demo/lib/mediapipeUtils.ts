@@ -1,4 +1,5 @@
 import type { FaceData } from './scoring';
+import { KEY_LM_INDICES } from './baselineFace';
 
 const LM = {
   MOUTH_LEFT:       61,
@@ -111,5 +112,6 @@ export function extractFaceData(result: {
     rightEAR,
     leftSmile,
     rightSmile,
+    keyLandmarks: KEY_LM_INDICES.map((i) => lms[i]),
   };
 }

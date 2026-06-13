@@ -13,6 +13,7 @@ export type FaceData = {
   rightEAR?: number;
   leftSmile?: number;
   rightSmile?: number;
+  keyLandmarks?: { x: number; y: number; z: number }[];
 };
 
 export type ScoreResult = {

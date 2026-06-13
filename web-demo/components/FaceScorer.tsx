@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  useState, useEffect, useRef, useCallback, type ChangeEvent,
+  useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent,
 } from 'react';
 import { extractFaceData } from '@/lib/mediapipeUtils';
 import {
@@ -10,11 +10,12 @@ import {
   type FaceData,
 } from '@/lib/scoring';
 import { calcDominantFace } from '@/lib/dominantFace';
+import { averageBaseline, calcChangeScore } from '@/lib/baselineFace';
 
 const WASM_URL  = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task';
 
-type Mode      = 'score' | 'dominant' | 'angle';
+type Mode      = 'score' | 'dominant' | 'angle' | 'baseline';
 type InputType = 'camera' | 'upload';
 
 const RANK_GRAD: Record<string, string> = {
@@ -209,6 +210,32 @@ export default function FaceScorer() {
     setRightFlash(false);
   }, []);
 
+  // 基準顔登録
+  type RawLm = { x: number; y: number; z: number };
+  const [baselineSamples, setBaselineSamples] = useState<RawLm[][]>([]);
+  const [captureFlash,    setCaptureFlash]    = useState(false);
+
+  const baselineLandmarks = useMemo(
+    () => averageBaseline(baselineSamples),
+    [baselineSamples],
+  );
+
+  const changeScore = useMemo(() => {
+    if (!faceData.keyLandmarks || !baselineLandmarks) return null;
+    return calcChangeScore(faceData.keyLandmarks, baselineLandmarks);
+  }, [faceData.keyLandmarks, baselineLandmarks]);
+
+  const captureBaseline = useCallback(() => {
+    if (!faceData.keyLandmarks) return;
+    setBaselineSamples((prev) => [...prev, faceData.keyLandmarks!]);
+    setCaptureFlash(true);
+    setTimeout(() => setCaptureFlash(false), 800);
+  }, [faceData.keyLandmarks]);
+
+  const clearBaseline = useCallback(() => {
+    setBaselineSamples([]);
+  }, []);
+
   // 画像アップロード
   const handleFileChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
@@ -271,9 +298,10 @@ export default function FaceScorer() {
       {/* メインモードタブ */}
       <div className="flex bg-white border-b border-gray-200">
         {([
-          ['score',    '📊 スコア診断'],
-          ['dominant', '✨ 利き顔チェック'],
-          ['angle',    '📐 角度モード'],
+          ['score',    '📊 スコア'],
+          ['dominant', '✨ 利き顔'],
+          ['angle',    '📐 角度'],
+          ['baseline', '📸 基準顔'],
         ] as [Mode, string][]).map(([m, label]) => (
           <button
             key={m}
@@ -431,6 +459,11 @@ export default function FaceScorer() {
                 ⚠️ 加工しすぎは「写真詐欺」リスクあり（パネルマジック注意）
               </p>
             )}
+            {changeScore !== null && changeScore > 40 && retouchLevel <= 1 && (
+              <p className="text-xs text-orange-500 -mt-1 mb-2">
+                💡 基準顔と差が大きいようです。加工度の自己申告を見直しますか？
+              </p>
+            )}
             <Selector
               label="光の状態（自己申告）"
               options={LIGHT_LABELS}
@@ -452,6 +485,54 @@ export default function FaceScorer() {
               </ul>
             </div>
           )}
+
+          {/* 変化度セクション */}
+          <div className="mx-4 mt-3 border border-purple-200 rounded-xl overflow-hidden">
+            <div className="bg-purple-50 px-3 py-2 flex items-center gap-2">
+              <span className="text-purple-500 text-sm">🔍</span>
+              <p className="text-xs font-semibold text-purple-700">基準顔との変化度</p>
+            </div>
+            {!baselineLandmarks ? (
+              <div className="px-3 py-3">
+                <p className="text-xs text-gray-400">
+                  「📸 基準顔」タブで顔を登録すると、変化度を計測できます
+                </p>
+              </div>
+            ) : changeScore !== null ? (
+              <div className="px-3 py-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-14 flex-shrink-0">変化度</span>
+                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        changeScore >= 60 ? 'bg-red-400' :
+                        changeScore >= 40 ? 'bg-orange-400' :
+                        'bg-purple-400'
+                      }`}
+                      style={{ width: `${changeScore}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-gray-600 w-10 text-right flex-shrink-0">
+                    {changeScore}%
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  基準の自分と比べて{' '}
+                  <span className="font-semibold text-purple-600">{changeScore}%</span>{' '}
+                  変化しています
+                </p>
+                {changeScore >= 60 && (
+                  <p className="text-xs text-red-500">
+                    ⚠️ 変化が大きめです。加工・フィルター・角度の差などが原因の可能性があります
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="px-3 py-3">
+                <p className="text-xs text-gray-400">顔を映すと変化度を計測します</p>
+              </div>
+            )}
+          </div>
 
           <div className="px-4 mt-3">
             <button
@@ -661,6 +742,81 @@ export default function FaceScorer() {
               </p>
             </>
           )}
+        </div>
+      )}
+
+      {/* ══ 基準顔登録パネル ══ */}
+      {mode === 'baseline' && (
+        <div className="px-4 pt-4 space-y-3">
+          {/* 登録状態 */}
+          <div className="bg-white rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-gray-700">登録状態</p>
+              {baselineSamples.length > 0 && (
+                <button
+                  onClick={clearBaseline}
+                  className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                >
+                  クリア
+                </button>
+              )}
+            </div>
+            {baselineSamples.length === 0 ? (
+              <p className="text-xs text-gray-400">未登録 — 下のボタンで顔を登録してください</p>
+            ) : (
+              <div>
+                <p className="text-xs text-green-600 font-medium">
+                  ✓ {baselineSamples.length}枚登録済み（平均値を基準として使用中）
+                </p>
+                {baselineSamples.length < 3 && (
+                  <p className="text-xs text-amber-500 mt-0.5">
+                    あと{3 - baselineSamples.length}枚以上登録すると精度が上がります
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-gray-400 mt-1.5">推奨: 3〜5枚</p>
+          </div>
+
+          {/* 撮影ボタン */}
+          <button
+            onClick={captureBaseline}
+            disabled={!faceData.hasFace || !faceData.keyLandmarks}
+            className={`w-full py-3 rounded-full text-sm font-semibold transition-colors ${
+              captureFlash
+                ? 'bg-green-500 text-white'
+                : faceData.hasFace && faceData.keyLandmarks
+                  ? 'bg-pink-500 hover:bg-pink-600 active:bg-pink-700 text-white'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {captureFlash
+              ? '✓ 登録しました！'
+              : faceData.hasFace
+                ? '📸 この顔を基準として登録'
+                : '顔をカメラに映してください'}
+          </button>
+
+          {/* コツ */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-amber-700 mb-1.5">登録のコツ</p>
+            <ul className="space-y-1">
+              {[
+                '素の顔（メイクなし・加工なし）を正面から撮影する',
+                '3〜5枚撮ると平均化され精度が上がります',
+                '毎回同じ明るさ・距離・角度で撮ると比較しやすいです',
+                '表情は自然な無表情が基準として適しています',
+              ].map((tip, i) => (
+                <li key={i} className="text-xs text-gray-700 flex gap-1.5">
+                  <span className="text-amber-400 flex-shrink-0">•</span>{tip}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="text-xs text-gray-400 text-center pb-2">
+            ※基準顔はページをリロードするとリセットされます
+          </p>
         </div>
       )}
 

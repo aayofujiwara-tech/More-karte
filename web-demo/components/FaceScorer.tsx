@@ -41,6 +41,11 @@ export default function FaceScorer() {
   const [lightLevel,   setLightLevel]   = useState(3);
   const [showRaw,      setShowRaw]      = useState(false);
 
+  const [maxLeftScore,  setMaxLeftScore]  = useState<number | null>(null);
+  const [maxRightScore, setMaxRightScore] = useState<number | null>(null);
+  const [leftFlash,     setLeftFlash]     = useState(false);
+  const [rightFlash,    setRightFlash]    = useState(false);
+
   const videoRef     = useRef<HTMLVideoElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const streamRef    = useRef<MediaStream | null>(null);
@@ -175,6 +180,34 @@ export default function FaceScorer() {
   }, [detectorReady]);
 
   useEffect(() => () => { stopCamera(); }, [stopCamera]);
+
+  useEffect(() => {
+    if (mode !== 'dominant') return;
+    const result = calcDominantFace(faceData);
+    if (!result) return;
+    let cleanup: (() => void) | undefined;
+    if (maxLeftScore === null || result.leftScore > maxLeftScore) {
+      setMaxLeftScore(result.leftScore);
+      setLeftFlash(true);
+      const t = setTimeout(() => setLeftFlash(false), 800);
+      cleanup = () => clearTimeout(t);
+    }
+    if (maxRightScore === null || result.rightScore > maxRightScore) {
+      setMaxRightScore(result.rightScore);
+      setRightFlash(true);
+      const t2 = setTimeout(() => setRightFlash(false), 800);
+      const prev = cleanup;
+      cleanup = () => { clearTimeout(t2); prev?.(); };
+    }
+    return cleanup;
+  }, [faceData, mode, maxLeftScore, maxRightScore]);
+
+  const resetMaxScores = useCallback(() => {
+    setMaxLeftScore(null);
+    setMaxRightScore(null);
+    setLeftFlash(false);
+    setRightFlash(false);
+  }, []);
 
   // 画像アップロード
   const handleFileChange = useCallback(
@@ -474,20 +507,60 @@ export default function FaceScorer() {
               </div>
 
               <div className="bg-white rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-gray-500">顔スコア比較</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500">顔スコア比較</p>
+                  <button
+                    onClick={resetMaxScores}
+                    className="text-xs text-gray-400 hover:text-rose-400 transition-colors px-2 py-0.5 rounded border border-gray-200 hover:border-rose-300"
+                  >
+                    リセット
+                  </button>
+                </div>
                 {[
-                  { label: '左顔', score: dominantResult.leftScore,  color: 'from-pink-400 to-rose-400' },
-                  { label: '右顔', score: dominantResult.rightScore, color: 'from-purple-400 to-blue-400' },
-                ].map(({ label, score, color }) => (
-                  <div key={label} className="flex gap-2 items-center">
-                    <span className="text-xs text-gray-500 w-8 text-right">{label}</span>
-                    <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                  {
+                    label: '左顔',
+                    score: dominantResult.leftScore,
+                    maxScore: maxLeftScore,
+                    flash: leftFlash,
+                    barColor: 'from-pink-400 to-rose-400',
+                    maxBarColor: 'bg-pink-300',
+                  },
+                  {
+                    label: '右顔',
+                    score: dominantResult.rightScore,
+                    maxScore: maxRightScore,
+                    flash: rightFlash,
+                    barColor: 'from-purple-400 to-blue-400',
+                    maxBarColor: 'bg-purple-300',
+                  },
+                ].map(({ label, score, maxScore, flash, barColor, maxBarColor }) => (
+                  <div key={label} className="space-y-1">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-gray-500">{label}</span>
+                      <div className="flex gap-3 text-xs">
+                        <span className="text-gray-600">
+                          現在: <span className="font-bold">{score}</span>
+                        </span>
+                        <span className={`transition-colors duration-300 ${
+                          flash ? 'text-amber-500 font-semibold' : 'text-gray-400'
+                        }`}>
+                          最高: <span className="font-bold">{maxScore ?? score}</span>
+                          {flash && <span className="ml-0.5 animate-bounce inline-block">↑</span>}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
+                      {maxScore !== null && maxScore > score && (
+                        <div
+                          className={`absolute top-0 h-full w-1 ${maxBarColor} opacity-60 z-10`}
+                          style={{ left: `${maxScore}%` }}
+                        />
+                      )}
                       <div
-                        className={`h-full bg-gradient-to-r ${color} rounded-full transition-all duration-500`}
+                        className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-500`}
                         style={{ width: `${score}%` }}
                       />
                     </div>
-                    <span className="text-xs font-bold text-gray-600 w-7 text-right">{score}</span>
                   </div>
                 ))}
               </div>

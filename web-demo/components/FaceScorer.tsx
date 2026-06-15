@@ -15,8 +15,9 @@ import { averageBaseline, calcChangeScore } from '@/lib/baselineFace';
 const WASM_URL  = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task';
 
-type Mode      = 'score' | 'dominant' | 'angle' | 'baseline';
-type InputType = 'camera' | 'upload';
+type Mode         = 'score' | 'dominant' | 'angle' | 'baseline';
+type InputType    = 'camera' | 'upload';
+type OptimalAngle = { pitch: number; yaw: number; roll: number };
 
 const RANK_GRAD: Record<string, string> = {
   SS: 'from-yellow-400 to-amber-500',
@@ -49,6 +50,9 @@ export default function FaceScorer() {
   const displayTickRef = useRef(0);
   const [dispLeft,  setDispLeft]  = useState(50);
   const [dispRight, setDispRight] = useState(50);
+
+  const [optimalAngle,   setOptimalAngle]   = useState<OptimalAngle | null>(null);
+  const [angleSaveError, setAngleSaveError] = useState<string | null>(null);
 
   const videoRef     = useRef<HTMLVideoElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -186,6 +190,13 @@ export default function FaceScorer() {
   useEffect(() => () => { stopCamera(); }, [stopCamera]);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem('morekarte_optimal_angle');
+      if (stored) setOptimalAngle(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
     if (mode !== 'dominant') return;
     const result = calcDominantFace(faceData);
     if (!result) return;
@@ -252,6 +263,36 @@ export default function FaceScorer() {
   const clearBaseline = useCallback(() => {
     setBaselineSamples([]);
   }, []);
+
+  const registerOptimalAngle = useCallback(() => {
+    const angle: OptimalAngle = {
+      pitch: faceData.pitchAngle ?? 0,
+      yaw:   faceData.yawAngle   ?? 0,
+      roll:  faceData.rollAngle  ?? 0,
+    };
+    try {
+      localStorage.setItem('morekarte_optimal_angle', JSON.stringify(angle));
+      setOptimalAngle(angle);
+      setAngleSaveError(null);
+    } catch {
+      setAngleSaveError('データの保存に失敗しました。プライベートブラウジングモードでは保存できない場合があります。');
+    }
+  }, [faceData.pitchAngle, faceData.yawAngle, faceData.rollAngle]);
+
+  const clearOptimalAngle = useCallback(() => {
+    try { localStorage.removeItem('morekarte_optimal_angle'); } catch { /* ignore */ }
+    setOptimalAngle(null);
+    setAngleSaveError(null);
+  }, []);
+
+  const angleDiff = useMemo(() => {
+    if (!optimalAngle || !faceData.hasFace) return null;
+    return {
+      pitch: (faceData.pitchAngle ?? 0) - optimalAngle.pitch,
+      yaw:   (faceData.yawAngle   ?? 0) - optimalAngle.yaw,
+      roll:  (faceData.rollAngle  ?? 0) - optimalAngle.roll,
+    };
+  }, [optimalAngle, faceData]);
 
   // 画像アップロード
   const handleFileChange = useCallback(
@@ -740,6 +781,50 @@ export default function FaceScorer() {
                 })}
               </div>
 
+              {/* 最適角度との差分 */}
+              {angleDiff && (() => {
+                const { pitch, yaw, roll } = angleDiff;
+                const maxDiff = Math.max(Math.abs(pitch), Math.abs(yaw), Math.abs(roll));
+                const isNear = maxDiff <= 5;
+                const isFar  = maxDiff >= 15;
+                const adviceLines: string[] = isNear ? [] : [
+                  ...(Math.abs(pitch) > 5 ? [pitch > 0 ? 'もう少しカメラを上に向けて' : 'もう少しカメラを下に向けて'] : []),
+                  ...(Math.abs(yaw)   > 5 ? [yaw   > 0 ? 'もう少し顔を右に向けて'     : 'もう少し顔を左に向けて']     : []),
+                  ...(Math.abs(roll)  > 5 ? ['顔の傾きを少し戻して']                                                  : []),
+                ];
+                return (
+                  <div className={`rounded-xl p-4 border ${
+                    isFar  ? 'bg-orange-50 border-orange-200' :
+                    isNear ? 'bg-green-50  border-green-200'  :
+                             'bg-blue-50   border-blue-200'
+                  }`}>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">最適角度との差分</p>
+                    <p className="text-xs text-gray-600 mb-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      pitch: <span className="font-mono">{pitch >= 0 ? '+' : ''}{pitch.toFixed(1)}°</span>
+                      {' / '}
+                      yaw: <span className="font-mono">{yaw >= 0 ? '+' : ''}{yaw.toFixed(1)}°</span>
+                      {' / '}
+                      roll: <span className="font-mono">{roll >= 0 ? '+' : ''}{roll.toFixed(1)}°</span>
+                    </p>
+                    <p className={`text-sm font-semibold ${
+                      isFar ? 'text-orange-600' : isNear ? 'text-green-600' : 'text-blue-600'
+                    }`}>
+                      {isNear ? 'ベストアングルです！' : isFar ? '最適角度から大きくズレています' : '最適角度に近いです'}
+                    </p>
+                    {adviceLines.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5">
+                        {adviceLines.map((line, i) => (
+                          <li key={i} className="text-xs text-gray-600 flex gap-1.5">
+                            <span className={`flex-shrink-0 ${isFar ? 'text-orange-400' : 'text-blue-400'}`}>•</span>
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
+
               {faceData.bounds && (
                 <div className="bg-white rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -784,6 +869,46 @@ export default function FaceScorer() {
               </p>
             </>
           )}
+
+          {/* 最適角度登録 */}
+          <div className="bg-white rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-700">最適角度の登録</p>
+              {optimalAngle && (
+                <button
+                  onClick={clearOptimalAngle}
+                  className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                >
+                  クリア
+                </button>
+              )}
+            </div>
+            {optimalAngle ? (
+              <p className="text-xs text-green-600 font-medium">
+                ✓ 登録済み（pitch: {optimalAngle.pitch.toFixed(1)}° / yaw: {optimalAngle.yaw.toFixed(1)}° / roll: {optimalAngle.roll.toFixed(1)}°）
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">未登録 — 盛れると感じた角度でボタンを押してください</p>
+            )}
+            <button
+              onClick={registerOptimalAngle}
+              disabled={!faceData.hasFace}
+              className={`w-full py-2.5 rounded-full text-sm font-semibold transition-colors ${
+                faceData.hasFace
+                  ? 'bg-pink-500 hover:bg-pink-600 active:bg-pink-700 text-white'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              この角度を最適として登録
+            </button>
+            {angleSaveError && (
+              <p className="text-xs text-red-500">{angleSaveError}</p>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-400 text-center px-2 pb-2">
+            この設定はお使いのブラウザに保存されます。ブラウザのキャッシュ・閲覧データを削除すると消えます。別のブラウザやデバイスでは共有されません。
+          </p>
         </div>
       )}
 
